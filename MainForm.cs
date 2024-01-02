@@ -126,7 +126,7 @@ public partial class MainForm : Form
         if (obj == null) return;
         var path = directoryTextBox.Text;
 
-        Invoke(delegate { SetStatusBusy("Mendownload playlist hls..."); });
+        Invoke(SetStatusBusy,"Mendownload playlist hls...");
         Directory.CreateDirectory(path);
         partitions = await downloader.DownloadHlsPlaylistAsync(obj, path);
         Invoke(delegate
@@ -136,6 +136,7 @@ public partial class MainForm : Form
             endNumeric.Value = partitions.Count;
         });
     }
+
     private void OnDownload(object sender, EventArgs e)
     {
         var button = (Button)sender;
@@ -147,8 +148,8 @@ public partial class MainForm : Form
 
     private async Task OnDownloadAsync()
     {
-        SetStatusBusy("Mendownload partisi...");
-        await downloader.DownloadVideoPartitions(
+        Invoke(SetStatusBusy, "Mendownload partisi...");
+        await downloader.DownloadAllVideoPartitionsAsync(
             partitions,
             directoryTextBox.Text,
             (int)startNumeric.Value,
@@ -159,5 +160,28 @@ public partial class MainForm : Form
             )
         );
         Invoke(SetStatusReady);
+    }
+
+    private void OnMerge(object sender, EventArgs e)
+    {
+        var button = (Button)sender;
+        button.Enabled = false;
+        OnMergeAsync().ContinueWith(
+            task => Invoke(delegate { button.Enabled = true; })
+        );
+    }
+
+    private async Task OnMergeAsync()
+    {
+        Invoke(SetStatusBusy, "Mengonversikan video...");
+        await downloader.ConvertPartitionsToMp4Async(
+            partitions,
+            directoryTextBox.Text,
+            (int)startNumeric.Value,
+            (int)endNumeric.Value,
+            (current, max) => Invoke(
+                SetStatusBusy,
+                $"Mengonversikan video {current}/{max}..."
+            ));
     }
 }

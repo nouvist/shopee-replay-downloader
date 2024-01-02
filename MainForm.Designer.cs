@@ -286,6 +286,7 @@
             mergeButton.TabIndex = 14;
             mergeButton.Text = "Gabung MP4";
             mergeButton.UseVisualStyleBackColor = true;
+            mergeButton.Click += OnMerge;
             // 
             // MainForm
             // 

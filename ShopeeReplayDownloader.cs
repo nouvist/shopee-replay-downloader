@@ -1,6 +1,7 @@
 ﻿using RestSharp;
 using RestSharp.Serializers.Json;
 using ShopeeReplayDownloader.JsonInterfaces;
+using System.Diagnostics;
 
 namespace ShopeeReplayDownloader;
 internal class ShopeeReplayDownloader : IDisposable
@@ -65,7 +66,7 @@ internal class ShopeeReplayDownloader : IDisposable
         }
         return partitions;
     }
-    private static async Task LoopThroughParitions(
+    private static async Task LoopThroughParitionsAsync(
         List<Uri> partitions,
         string directoryPath,
         int? start,
@@ -87,14 +88,14 @@ internal class ShopeeReplayDownloader : IDisposable
         }
     }
 
-    public async Task DownloadVideoPartitions(
+    public async Task DownloadAllVideoPartitionsAsync(
         List<Uri> partitions,
         string directoryPath,
         int? start = null,
         int? end = null,
         Action<int, int>? onProgress = null)
     {
-        await LoopThroughParitions(partitions, directoryPath, start, end,
+        await LoopThroughParitionsAsync(partitions, directoryPath, start, end,
             async (uri, file, start, end, i) =>
             {
                 if (File.Exists(file)) return;
@@ -104,5 +105,54 @@ internal class ShopeeReplayDownloader : IDisposable
                 await File.WriteAllBytesAsync(file, buffer!);
                 onProgress?.Invoke(i - start + 1, end - start);
             });
+    }
+
+    public async Task ConvertPartitionsToMp4Async(
+        List<Uri> partitions,
+        string directoryPath,
+        int? start = null,
+        int? end = null,
+        Action<int, int>? onProgress = null)
+    {
+        var mp4File = Path.Join(directoryPath, $"__convert_{start}-{end}.mp4");
+        if (File.Exists(mp4File)) return;
+        var tsFile = Path.Join(directoryPath, $"__convert_{start}-{end}.ts");
+        if (!File.Exists(tsFile))
+        {
+            using var stream = new FileStream(tsFile, FileMode.Create);
+            await LoopThroughParitionsAsync(partitions, directoryPath, start, end,
+                async (uri, file, start, end, i) =>
+                {
+                    onProgress?.Invoke(i - start, end - start);
+                    using var current = new FileStream(file, FileMode.Open);
+                    await current.CopyToAsync(stream);
+                });
+        }
+
+        var task = Task.Run(delegate
+        {
+            using var ffmpeg = new Process()
+            {
+                StartInfo = {
+                FileName = "ffmpeg.exe",
+                ArgumentList = {
+                    "-i", tsFile,
+                    "-c:a", "copy",
+                    "-c:v", "copy",
+                    mp4File
+                }
+            },
+            };
+            ffmpeg.Start();
+            ffmpeg.WaitForInputIdle();
+            ffmpeg.WaitForExit();
+        });
+        var tsSize = new FileInfo(tsFile).Length;
+        while (!task.IsCompleted)
+        {
+            var progress = (double)(new FileInfo(mp4File).Length / tsSize);
+            onProgress?.Invoke(Math.Min(95, (int)(progress * 95)), 100);
+        }
+        await task;
     }
 }
